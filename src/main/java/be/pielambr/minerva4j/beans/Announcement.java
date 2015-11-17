@@ -2,9 +2,6 @@ package be.pielambr.minerva4j.beans;
 
 import java.util.Date;
 
-/**
- * Created by Pieterjan Lambrecht on 16/06/2015.
- */
 public class Announcement implements Comparable<Announcement> {
 
     private final String _content;

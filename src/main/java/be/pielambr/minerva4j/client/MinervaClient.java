@@ -4,34 +4,30 @@ import be.pielambr.minerva4j.beans.Announcement;
 import be.pielambr.minerva4j.beans.Course;
 import be.pielambr.minerva4j.beans.Document;
 import be.pielambr.minerva4j.beans.Event;
+import be.pielambr.minerva4j.beans.json.AnnouncementJson;
+import be.pielambr.minerva4j.beans.json.CourseJson;
 import be.pielambr.minerva4j.exceptions.LoginFailedException;
-import be.pielambr.minerva4j.parsers.AnnouncementParser;
-import be.pielambr.minerva4j.parsers.CourseParser;
 import be.pielambr.minerva4j.parsers.DocumentParser;
-import be.pielambr.minerva4j.parsers.EventParser;
 import be.pielambr.minerva4j.utility.Constants;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
-import jodd.jerry.Jerry;
-import jodd.lagarto.dom.Node;
+import com.google.gson.reflect.TypeToken;
+import com.turbomanage.httpclient.BasicHttpClient;
+import com.turbomanage.httpclient.HttpResponse;
+import jodd.util.Base64;
 
 import java.io.IOException;
-import java.net.URLEncoder;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
-/**
- * Created by Pieterjan Lambrecht on 15/06/2015.
- */
 public class MinervaClient {
 
-    private final HttpClient _browser;
-    private Map<String, List<String>> _map;
-    private boolean loggedin;
-
-    private final String _username;
-    private final String _password;
+    private final BasicHttpClient _client;
+    private final Gson gson;
 
     /**
      * Default constructor for the Minerva client
@@ -39,9 +35,12 @@ public class MinervaClient {
      * @param password Password for the user
      */
     public MinervaClient(String username, String password) {
-        _username = username;
-        _password = password;
-        _browser = new HttpClient();
+        String _auth = Base64.encodeToString(username + ":" + password);
+
+        _client = new BasicHttpClient(Constants.BASE_URL);
+        _client.addHeader("Authorization", "Basic " + _auth);
+
+        gson = new GsonBuilder().setDateFormat("yyyy-MM-dd").create();
     }
 
     /**
@@ -54,10 +53,6 @@ public class MinervaClient {
     }
 
     private void login() throws IOException {
-        String loginRequest = "username=" + _username + "&password=" + _password;
-        _browser.post(Constants.LOGIN_URL, loginRequest);
-        return;
-
     }
 
     /**
@@ -66,17 +61,11 @@ public class MinervaClient {
      * @throws LoginFailedException Is thrown if the login was incorrect
      */
     public boolean verifyLogin() throws LoginFailedException, IOException {
-        // Check index page
-        String response = _browser.get(Constants.INDEX_URL);
-        // Check to see if we find a course list
-        if (response != null) {
-            Jerry i = Jerry.jerry(response);
-            Node node = i.$(Constants.COURSE_LIST).get(0);
-            if (node != null) {
-                return true;
-            }
+        HttpResponse resp = _client.get("", null);
+        if (resp.getStatus() < 200 || resp.getStatus() > 299) {
+            throw new LoginFailedException();
         }
-        throw new LoginFailedException();
+        return true;
     }
 
     /**
@@ -85,7 +74,16 @@ public class MinervaClient {
      * @return Returns a list of announcements
      */
     public List<Announcement> getAnnouncements(Course course) throws IOException {
-        List<Announcement> announcements = AnnouncementParser.getAnnouncements(this, course);
+        HttpResponse resp = _client.get(String.format(Constants.ANNOUNCEMENT_URL, course.getCode()), null);
+        Type listType = new TypeToken<ArrayList<AnnouncementJson>>() {
+        }.getType();
+
+        List<AnnouncementJson> announcementJsons = gson.fromJson(resp.getBodyAsString(), listType);
+        List<Announcement> announcements = new ArrayList<Announcement>(announcementJsons.size());
+        for (AnnouncementJson ser : announcementJsons) {
+            announcements.add(ser.adapt());
+        }
+
         return announcements;
     }
 
@@ -94,7 +92,16 @@ public class MinervaClient {
      * @return A list of courses for the current user
      */
     public List<Course> getCourses() throws IOException {
-        return CourseParser.getCourses(this);
+        HttpResponse resp = _client.get("", null);
+        Type listType = new TypeToken<ArrayList<CourseJson>>() {
+        }.getType();
+
+        List<CourseJson> courseJsons = gson.fromJson(resp.getBodyAsString(), listType);
+        List<Course> courses = new ArrayList<Course>(courseJsons.size());
+        for (CourseJson ser : courseJsons) {
+            courses.add(ser.adapt());
+        }
+        return courses;
     }
 
     /**
@@ -103,12 +110,12 @@ public class MinervaClient {
      * @return A list of documents
      */
     public List<Document> getDocuments(Course course) throws IOException {
-        List<Document> documents = DocumentParser.getDocuments(this, course);
-        return documents;
+        HttpResponse resp = _client.get(String.format(Constants.DOCUMENT_URL, course.getCode()), null);
+        return DocumentParser.parseDocuments(resp.getBodyAsString());
     }
 
-    public HttpClient getClient() {
-        return this._browser;
+    public BasicHttpClient getClient() {
+        return this._client;
     }
 
     /**
@@ -118,7 +125,7 @@ public class MinervaClient {
      * @return A valid download URL for the document
      */
     public String getDocumentDownloadURL(Course course, Document document) throws IOException {
-        String response = _browser.get(Constants.AJAX_URL + course.getCode() + Constants.DOCUMENTS + document.getId());
+        String response = _client.get(Constants.AJAX_URL + course.getCode() + Constants.DOCUMENTS + document.getId(), null).getBodyAsString();
         JsonParser parser = new JsonParser();
         JsonElement element = parser.parse(response);
         return element.getAsJsonObject().get("url").getAsString();
@@ -129,10 +136,6 @@ public class MinervaClient {
      * meaning we have been logged out and logs us back in
      */
     public void checkLogin(MinervaClient client) throws IOException {
-        if(client.getClient().getConnection().getURL().toString().contains(Constants.LOGIN_URL)
-                || client.getClient().getConnection().getHeaderField("Location").contains(Constants.LOGIN_URL)) {
-            login();
-        }
     }
 
     /**
@@ -140,7 +143,7 @@ public class MinervaClient {
      * @return A list of all events
      */
     public List<Event> getEvents() throws IOException {
-        return EventParser.getEvents(this);
+        return null; //EventParser.getEvents(this);
     }
 
     /**
@@ -150,7 +153,7 @@ public class MinervaClient {
      * @return A list of all events in a timespan
      */
     public List<Event> getEvents(Date start, Date end) throws IOException {
-        return EventParser.getEvents(this, start, end);
+        return null; //EventParser.getEvents(this, start, end);
     }
 
 }

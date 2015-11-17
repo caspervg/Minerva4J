@@ -2,9 +2,6 @@ package be.pielambr.minerva4j.beans;
 
 import java.util.Date;
 
-/**
- * Created by pieterjan on 23/09/15.
- */
 public class Event {
 
     private final String _id;

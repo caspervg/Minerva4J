@@ -1,3 +1,6 @@
+import be.pielambr.minerva4j.beans.Announcement;
+import be.pielambr.minerva4j.beans.Course;
+import be.pielambr.minerva4j.beans.Document;
 import be.pielambr.minerva4j.client.MinervaClient;
 import be.pielambr.minerva4j.exceptions.LoginFailedException;
 import org.junit.Assert;
@@ -8,6 +11,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.Properties;
 
 /**
@@ -47,16 +51,14 @@ public class TestClient {
         MinervaClient client = new MinervaClient(_username, _password);
         try {
             client.connect();
+
+            List<Course> courses = client.getCourses();
+            for (Course course : courses) {
+                List<Announcement> announcements = client.getAnnouncements(course);
+                List<Document> documents = client.getDocuments(course);
+            }
         } catch (LoginFailedException e) {
             Assert.fail("Login failed");
-        }
-        // But this should though
-        client = new MinervaClient("john", "doe");
-        try {
-            client.connect();
-            Assert.fail("Login should have failed");
-        } catch (LoginFailedException e) {
-            // It's all fine
         }
     }
 }
